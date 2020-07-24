@@ -87,6 +87,7 @@ local function eventify(sEvent)
         end
         local i = #tConnections[sEvent] + 1
         tConnections[sEvent][i] = fCallback
+
         return {
           Disconnect = function()
             for i = 1, #tConnections[sEvent] do
@@ -493,7 +494,7 @@ function tLib.run(tSubscriptions, sAuth)
   ws.close()
   running = false
   if not bOk then
-    error(sErr)
+    error(sErr, 2)
   end
 end
 
