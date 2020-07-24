@@ -28,6 +28,7 @@ local sha256 = require("sha256") -- Recommended use Anavrin's version at https:/
 local tLib = {}
 local wsID = 1
 local sEndPoint, ws, sWsEP, sHttpEP
+local isAuthed, running = false, false
 
 --[[
   @local-function checkWS checks if the websocket has been set yet, throws an error if not.
@@ -112,6 +113,10 @@ local function wsStart(sAuth)
     local tData = json.decode(tResponse.readAll())
     tResponse.close()
     if tData.ok then
+      if sAuth then
+        isAuthed = true
+      end
+      print("Response data:", textutils.serialize(tData))
       local sResponse, sErr2 = http.websocket(tData.url)
       if sResponse then
         ws = sResponse
@@ -156,26 +161,40 @@ end
   @param sTo The address to send krist to.
   @param iAmount The amount of krist to send. This value will be math.floor'd
   @param sMeta Optional The metadata to send with.
+  @param sAuth Optional If KristWrap is not running, you can use this to authorize the transaction
   @returns 1 (value=true), (integer krist_sent) If the transaction was successful
   @returns 2 (value=false), (string error) If the transaction failed
 ]]
-function tLib.makeTransaction(sTo, iAmount, sMeta)
-  expect(1, sTo, "string")
+function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
+  expect(1, sTo,     "string")
   expect(2, iAmount, "number")
   iAmount = math.floor(iAmount)
-  expect(3, sMeta, "string", "nil")
-
-  local bOk, tResponse = wsRequest({
-    type = "make_transaction",
-    to = sTo,
-    amount = iAmount,
-    metadata = sMeta
-  })
-
-  if bOk then
-    return true
+  expect(3, sMeta,   "string", "nil")
+  expect(4, sAuth,   "string", nil)
+  if running and not isAuthed then
+    error("KristWrap is not authorized to make a transaction! Authorize before attempting to make a transaction!", 2)
   end
-  return false, tResponse.error
+  if not running and not sAuth then
+    error("KristWrap requires an authorization key (4th argument) to make a transaction if KristWrap is not running and authorized.", 2)
+  end
+
+  if running then -- websocket request
+    local bOk, tResponse = wsRequest({
+      type = "make_transaction",
+      to = sTo,
+      amount = iAmount,
+      metadata = sMeta
+    })
+
+    print(textutils.serialize(tResponse))
+
+    if bOk then
+      return true
+    end
+    return false, tResponse.error
+  else -- http request
+    error("Http-request version of makeTransaction not yet implemented.", 2)
+  end
 end
 
 --[[
@@ -229,6 +248,18 @@ function tLib.run(tSubscriptions, sAuth)
   -- subscribe to subscriptions
   subscribe(tSubscriptions or {})
 
+  local tRecognized = {
+    event = function(tData)
+      local sEvent = tData.event
+      if sEvent == "transaction" then
+        local t = tData.transaction
+        local ok, meta = pcall(json.decode, t.metadata)
+        if not ok then meta = t.metadata end
+        os.queueEvent("KristWrap_Transaction", t.from, t.to, t.value, meta)
+      end
+    end
+  }
+  running = true
   local function loop()
     local iFailCount = 0
     while true do
@@ -237,6 +268,9 @@ function tLib.run(tSubscriptions, sAuth)
       if bOk then
         iFailCount = 0
         os.queueEvent("websocket_message_decoded", tData)
+        if tRecognized[tData.type] then
+          tRecognized[tData.type](tData)
+        end
       else
         iFailCount = iFailCount + 1
         if iFailCount > 10 then
@@ -248,6 +282,7 @@ function tLib.run(tSubscriptions, sAuth)
 
   local bOk, sErr = pcall(loop)
   ws.close()
+  running = false
   if not bOk then
     error(sErr)
   end
