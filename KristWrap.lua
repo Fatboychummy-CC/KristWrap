@@ -22,7 +22,7 @@
 ]]
 
 local expect = require("cc.expect").expect
-local json = require("json")     -- Recommended use rxi's version at https://github.com/rxi/json.lua
+local json   = require("json")   -- Recommended use rxi's version at https://github.com/rxi/json.lua
 local sha256 = require("sha256") -- Recommended use Anavrin's version at https://pastebin.com/6UV4qfNF
                                  -- May not be compatible with other versions of these modules.
 local tLib = {}
