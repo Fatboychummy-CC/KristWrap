@@ -102,11 +102,14 @@ local function wsStart(sAuth)
   checkEndPoint()
 
   tLib.close()
+  if sAuth then
+    sAuth = tLib.toKristWalletFormat(sAuth)
+  end
 
   local tResponse, sErr = httpPost(
     sHttpEP .. "/ws/start",
     {
-      privatekey = sKey and tLib.toKristWalletFormat(sKey)
+      privatekey = sAuth
     }
   )
   if tResponse then
@@ -150,7 +153,7 @@ local function subscribe(tSubscriptions)
         -- we need to go deeper, soon...
         sError = "Unknown"
       end
-      error(string.format("Failed to subscribe to %s: %s"), tSubscriptions[i], sError)
+      error(string.format("Failed to subscribe to %s: %s", tSubscriptions[i], sError), 2)
     end
     wsID = wsID + 1
   end
@@ -170,7 +173,7 @@ function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
   expect(2, iAmount, "number")
   iAmount = math.floor(iAmount)
   expect(3, sMeta,   "string", "nil")
-  expect(4, sAuth,   "string", nil)
+  expect(4, sAuth,   "string", "nil")
   if running and not isAuthed then
     error("KristWrap is not authorized to make a transaction! Authorize before attempting to make a transaction!", 2)
   end
@@ -243,7 +246,7 @@ function tLib.run(tSubscriptions, sAuth)
   checkEndPoint()
 
   -- Make the connection to the krist endpoint
-  wsStart(sHttpEP, sAuth)
+  wsStart(sAuth)
 
   -- subscribe to subscriptions
   subscribe(tSubscriptions or {})
