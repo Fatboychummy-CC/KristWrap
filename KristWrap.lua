@@ -101,32 +101,52 @@ local function wsStart(sAuth)
   expect(1, sAuth, "string", "nil")
   checkEndPoint()
 
-  tLib.close()
+  tLib.close() -- close the old websocket session if there's one already running.
+
+  -- if we want to authorize, convert the input key to krist wallet format.
   if sAuth then
     sAuth = tLib.toKristWalletFormat(sAuth)
   end
 
+  -- POST to /ws/start
   local tResponse, sErr = httpPost(
     sHttpEP .. "/ws/start",
     {
       privatekey = sAuth
     }
   )
+
+  -- if we received a response
   if tResponse then
-    local tData = json.decode(tResponse.readAll())
-    tResponse.close()
-    if tData.ok then
-      if sAuth then
-        isAuthed = true
-      end
-      local sResponse, sErr2 = http.websocket(tData.url)
-      if sResponse then
-        ws = sResponse
+    -- decode the response.
+    local bOk, tData = pcall(json.decode, tResponse.readAll())
+    tResponse.close() -- close the http handle
+
+    -- if we successfully decoded the response
+    if bOk then
+      -- and if the response was ok
+      if tData.ok then
+        -- if we wanted to authorize
+        if sAuth then
+          -- assume we've authorized properly
+          isAuthed = true
+        end
+
+        -- attempt websocket connection
+        local sResponse, sErr2 = http.websocket(tData.url)
+
+        -- if we got a response
+        if sResponse then
+          -- set the environment-local ws variable
+          ws = sResponse
+        else
+          error(string.format("Websocket connection failure: %s", sErr2))
+        end
       else
-        error(string.format("Websocket connection failure: %s", sErr2))
+        error(string.format("Websocket failure: %s", tData.error), 2)
       end
     else
-      error(string.format("Websocket failure: %s", tData.error), 2)
+      error(string.format("Websocket init decode failure: %s", tData), 2)
     end
   else
     error(string.format("Websocket creation failure: %s", sErr), 2)
@@ -140,21 +160,26 @@ end
 local function subscribe(tSubscriptions)
   expect(1, tSubscriptions, "table")
 
+  -- for each subscription
   for i = 1, #tSubscriptions do
+    -- request a subscription to it
     local bOk, tResponse = wsRequest({
       type = "subscribe",
-      event = tSubscriptions[i],
-      id = wsID
+      event = tSubscriptions[i]
     })
+
+    -- if we failed to subscribe to it
     if not bOk then
+      -- get the error
       local sError = tResponse.error
       if not sError then
         -- we need to go deeper, soon...
         sError = "Unknown"
       end
+
+      -- throw the error
       error(string.format("Failed to subscribe to %s: %s", tSubscriptions[i], sError), 2)
     end
-    wsID = wsID + 1
   end
 end
 
@@ -173,9 +198,13 @@ function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
   iAmount = math.floor(iAmount)
   expect(3, sMeta,   "string", "nil")
   expect(4, sAuth,   "string", "nil")
+
+  -- check if websocket mode is authed (if in websocket mode)
   if running and not isAuthed then
     error("KristWrap is not authorized to make a transaction in websocket mode! Authorize before attempting to make a transaction!", 2)
   end
+
+  -- check if http mode and if auth key supplied
   if not running and not sAuth then
     error("KristWrap requires an authorization key (4th argument) to make a transaction if KristWrap is not running in websocket mode and authorized.", 2)
   end
@@ -220,6 +249,8 @@ end
 ]]
 function tLib.toKristWalletFormat(sKey)
   expect(1, sKey, "string")
+
+  -- assume any key ending with "-000" is already in kristwallet format.
   if sKey:sub(#sKey - 3) == "-000" then
     return sKey
   end
@@ -234,12 +265,15 @@ end
 ]]
 function tLib.getV2Address(sKey)
   expect(1, sKey, "string")
-
   checkEndPoint()
 
+  -- convert to kristwallet format
   sKey = tLib.toKristWalletFormat(sKey)
 
+  -- ask for the v2 address
   local tResponse, sErr = httpPost(sHttpEP .. "/v2", {privatekey = sKey})
+
+  -- return the response if we got one, otherwise return nil
   if tResponse then
     tData = json.decode(tResponse.readAll())
     tResponse.close()
@@ -265,30 +299,53 @@ function tLib.run(tSubscriptions, sAuth)
   -- subscribe to subscriptions
   subscribe(tSubscriptions or {})
 
+  -- recognized types
   local tRecognized = {
+    -- event, currently only supporting "transaction" events.
     event = function(tData)
+      -- determine what event it is
       local sEvent = tData.event
+
+      -- if transaction event
       if sEvent == "transaction" then
+        -- get event information
         local t = tData.transaction
         local ok, meta = pcall(json.decode, t.metadata)
         if not ok then meta = t.metadata end
+
+        -- queue transaction event.
         os.queueEvent("KristWrap_Transaction", t.from, t.to, t.value, meta)
       end
     end
   }
-  running = true
+
+  -- main loop
   local function loop()
+    -- set running
+    running = true
     local iFailCount = 0
+
+    -- actual main loop
     while true do
+      -- listen for websocket messages
       local sData = ws.receive()
+
+      -- attempt decode
       local bOk, tData = pcall(json.decode, sData)
+
+      -- if we decoded properly
       if bOk then
         iFailCount = 0
+
+        -- queue a decoded message
         os.queueEvent("websocket_message_decoded", tData)
+
+        -- check if the type is recognized (so an extra event can be generated)
         if tRecognized[tData.type] then
           tRecognized[tData.type](tData)
         end
       else
+        -- allow up to 10 failures, after which the system will error.
         iFailCount = iFailCount + 1
         if iFailCount > 10 then
           error("Failed to decode data from websocket over ten times, stopping.")
@@ -297,6 +354,7 @@ function tLib.run(tSubscriptions, sAuth)
     end
   end
 
+  -- pcall main loop so if it stops we can close the websocket, and set running to false.
   local bOk, sErr = pcall(loop)
   ws.close()
   running = false
@@ -313,11 +371,18 @@ end
 function tLib.setEndPoint(_sEndPoint)
   expect(1, _sEndPoint, "string")
 
+  -- check if the last character is a '/' and remove it
   if _sEndPoint:sub(#_sEndPoint, #_sEndPoint) == "/" then
     _sEndPoint = _sEndPoint:sub(1, #_sEndPoint - 1)
   end
+
+  -- check if the start begins with "https://" or "http://"
   sEndPoint = string.gsub(_sEndPoint, "https?%:%/%/", "")
+
+  -- check if the start begins with "wss://" or "ws://"
   sEndPoint = string.gsub(sEndPoint, "wss?:%/%/", "")
+
+  -- set endpoints with ws:// and https://
   sWsEP = "ws://" .. sEndPoint
   sHttpEP = "https://" .. sEndPoint
 end
