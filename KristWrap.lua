@@ -119,7 +119,6 @@ local function wsStart(sAuth)
       if sAuth then
         isAuthed = true
       end
-      print("Response data:", textutils.serialize(tData))
       local sResponse, sErr2 = http.websocket(tData.url)
       if sResponse then
         ws = sResponse
@@ -165,7 +164,7 @@ end
   @param iAmount The amount of krist to send. This value will be math.floor'd
   @param sMeta Optional The metadata to send with.
   @param sAuth Optional If KristWrap is not running, you can use this to authorize the transaction
-  @returns 1 (value=true), (integer krist_sent) If the transaction was successful
+  @returns 1 (value=true) If the transaction was successful
   @returns 2 (value=false), (string error) If the transaction failed
 ]]
 function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
@@ -175,10 +174,10 @@ function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
   expect(3, sMeta,   "string", "nil")
   expect(4, sAuth,   "string", "nil")
   if running and not isAuthed then
-    error("KristWrap is not authorized to make a transaction! Authorize before attempting to make a transaction!", 2)
+    error("KristWrap is not authorized to make a transaction in websocket mode! Authorize before attempting to make a transaction!", 2)
   end
   if not running and not sAuth then
-    error("KristWrap requires an authorization key (4th argument) to make a transaction if KristWrap is not running and authorized.", 2)
+    error("KristWrap requires an authorization key (4th argument) to make a transaction if KristWrap is not running in websocket mode and authorized.", 2)
   end
 
   if running then -- websocket request
@@ -189,14 +188,28 @@ function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
       metadata = sMeta
     })
 
-    print(textutils.serialize(tResponse))
-
     if bOk then
       return true
     end
     return false, tResponse.error
   else -- http request
-    error("Http-request version of makeTransaction not yet implemented.", 2)
+    local tResponse, sErr, tErrorHandle = httpPost(
+      sHttpEP .. "/transactions/",
+      {
+        privatekey = tLib.toKristWalletFormat(sAuth),
+        to = sTo,
+        amount = iAmount,
+        metadata = sMeta
+      }
+    )
+
+    if not tResponse then
+      error(string.format("Bad response. sErr:(%s), handleAll:(%s)", sErr, tErrorHandle.readAll()))
+    end
+
+    local ok, tAll = pcall(json.decode, tResponse.readAll())
+    tResponse.close()
+    return tAll.ok, tAll.error
   end
 end
 
@@ -228,8 +241,9 @@ function tLib.getV2Address(sKey)
 
   local tResponse, sErr = httpPost(sHttpEP .. "/v2", {privatekey = sKey})
   if tResponse then
-    tResponse = json.decode(tResponse.readAll())
-    return tResponse.address
+    tData = json.decode(tResponse.readAll())
+    tResponse.close()
+    return tData.address
   end
 end
 
