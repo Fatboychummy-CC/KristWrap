@@ -277,7 +277,6 @@ end
 ]]
 function tLib.upgradeWebsocket(sAuth)
   expect(1, sAuth, "string")
-  expect(2, sExpectedWallet, "string", "nil")
   checkWS()
 
   local bOk, tResponse = wsRequest({
