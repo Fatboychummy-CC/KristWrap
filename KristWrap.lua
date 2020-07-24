@@ -551,7 +551,7 @@ tLib.websocket_message_decoded = eventify("websocket_message_decoded")
   @function close Closes the websocket, if it is opened.
 ]]
 function tLib.close()
-  if ws then ws.close() end
+  if ws then ws.close() ws = nil end
 end
 
 return tLib
