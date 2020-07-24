@@ -156,7 +156,7 @@ end
   @param sTo The address to send krist to.
   @param iAmount The amount of krist to send. This value will be math.floor'd
   @param sMeta Optional The metadata to send with.
-  @returns 1 (value=true) If the transaction was successful
+  @returns 1 (value=true), (integer krist_sent) If the transaction was successful
   @returns 2 (value=false), (string error) If the transaction failed
 ]]
 function tLib.makeTransaction(sTo, iAmount, sMeta)
@@ -268,6 +268,13 @@ function tLib.setEndPoint(_sEndPoint)
   sEndPoint = string.gsub(sEndPoint, "wss?:%/%/", "")
   sWsEP = "ws://" .. sEndPoint
   sHttpEP = "https://" .. sEndPoint
+end
+
+--[[
+  @function useDefaultEndPoint sets the endpoint to the default krist endpoint (krist.ceriat.net)
+]]
+function tLib.useDefaultEndPoint()
+  tLib.setEndPoint("krist.ceriat.net")
 end
 
 --[[
