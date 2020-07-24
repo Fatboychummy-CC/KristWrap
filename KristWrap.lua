@@ -30,6 +30,78 @@ local wsID = 1
 local sEndPoint, ws, sWsEP, sHttpEP
 local isAuthed, running = false, false
 
+local tConnections = {}
+
+--[[
+  @local-function eventify create a thing that can wait for events similar to roblox's events
+  @param sEvent the event to listen for
+  @returns 1 (table Wait/Connect methods)
+]]
+local function eventify(sEvent)
+  expect(1, sEvent, "string")
+  return {
+      --[[
+        @function Fire fires the event
+        @params event arguments
+      ]]
+      Fire = function(self, ...)
+        os.queueEvent(sEvent, ...)
+      end,
+
+      --[[
+        @function Wait waits for an event to occur, then returns it and it's data
+        @param self the event
+        @param nTimeout timeout, in seconds
+        @returns any If the event was received
+        @returns nil If the timeout was hit
+      ]]
+      Wait = function(self, nTimeout)
+        expect(1, self, "table")
+        expect(2, nTimeout, "number", "nil")
+
+        if nTimeout then
+          nTimeout = os.startTimer(nTimeout)
+        end
+        while true do
+          local tEvent = table.pack(os.pullEvent())
+          if tEvent[1] == "timer" and tEvent[2] == nTimeout then
+            return
+          elseif tEvent[1] == sEvent then
+            return table.unpack(tEvent, 2, tEvent.n)
+          end
+        end
+      end,
+
+      --[[
+        @function Connect whenever this event occurs, call callback
+        @param self the event
+        @param fCallback the callback function to be called with event data
+        @returns 1 (table with Disconnect to disconnect from the event)
+      ]]
+      Connect = function(self, fCallback)
+        expect(1, self, "table")
+        expect(2, fCallback, "function")
+
+        if not tConnections[sEvent] then
+          tConnections[sEvent] = {}
+        end
+        local i = #tConnections[sEvent] + 1
+        tConnections[sEvent][i] = fCallback
+        return {
+          Disconnect = function()
+            for i = 1, #tConnections[sEvent] do
+              if tConnections[sEvent][i] == fCallback then
+                table.remove(tConnections[sEvent], i)
+                break
+              end
+            end
+          end
+        }
+      end
+    }
+end
+
+
 --[[
   @local-function checkWS checks if the websocket has been set yet, throws an error if not.
 ]]
@@ -314,16 +386,17 @@ function tLib.run(tSubscriptions, sAuth)
         if not ok then meta = t.metadata end
 
         -- queue transaction event.
-        os.queueEvent("KristWrap_Transaction", t.from, t.to, t.value, meta)
+        tLib.Transaction:Fire(t.from, t.to, t.value, meta)
       end
     end
   }
 
   -- main loop
-  local function loop()
+  local function loop1()
     -- set running
     running = true
     local iFailCount = 0
+    tLib.Initialized:Fire()
 
     -- actual main loop
     while true do
@@ -338,7 +411,7 @@ function tLib.run(tSubscriptions, sAuth)
         iFailCount = 0
 
         -- queue a decoded message
-        os.queueEvent("websocket_message_decoded", tData)
+        tLib.websocket_message_decoded:Fire(tData)
 
         -- check if the type is recognized (so an extra event can be generated)
         if tRecognized[tData.type] then
@@ -354,8 +427,21 @@ function tLib.run(tSubscriptions, sAuth)
     end
   end
 
+  -- connections loop
+  local function loop2()
+    while true do
+      local tEvent = table.pack(os.pullEvent())
+      local sEvent = tEvent[1]
+      if tConnections[sEvent] then
+        for i = 1, #tConnections[sEvent] do
+          tConnections[sEvent][i](table.unpack(tEvent, 2, tEvent.n))
+        end
+      end
+    end
+  end
+
   -- pcall main loop so if it stops we can close the websocket, and set running to false.
-  local bOk, sErr = pcall(loop)
+  local bOk, sErr = pcall(parallel.waitForAny, loop1, loop2)
   ws.close()
   running = false
   if not bOk then
@@ -402,6 +488,16 @@ end
 function tLib.getEndPoint()
   return sEndPoint
 end
+
+--[[
+  @Event Initialized
+  @short Fired when
+]]
+tLib.Initialized = eventify("KristWrap_Initialized")
+
+tLib.Transaction = eventify("KristWrap_Transaction")
+
+tLib.websocket_message_decoded = eventify("websocket_message_decoded")
 
 --[[
   @function close Closes the websocket, if it is opened.
