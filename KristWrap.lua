@@ -256,6 +256,55 @@ local function subscribe(tSubscriptions)
 end
 
 --[[
+  @function aboutMe get information about the websocket
+  @short returns information like if the websocket is authorized, it's address, balance, and etc.
+  @returns 2 (boolean websocket_success), (table data)
+]]
+function tLib.aboutMe()
+  checkWS()
+
+  return wsRequest({
+    type = "me"
+  })
+end
+
+--[[
+  @function upgradeWebsocket upgrade the websocket's authorization level
+  @short Authorize the websocket to use a wallet
+  @param sAuth the authorization key to be used.
+  @returns 2 (value=true), (string address) If authorized
+  @returns 2 (value=false), (string error) If failed to authorize
+]]
+function tLib.upgradeWebsocket(sAuth)
+  expect(1, sAuth, "string")
+  expect(2, sExpectedWallet, "string", "nil")
+  checkWS()
+
+  local bOk, tResponse = wsRequest({
+    type = "login",
+    privatekey = tLib.toKristWalletFormat(sAuth)
+  })
+
+  return bOk, bOk and tResponse.address or tResponse.error
+end
+
+--[[
+  @function downgradeWebsocket downgrade the websocket's authorization level
+  @short De-Authorize the websocket to use a wallet.
+  @returns 2 (value=true), (boolean isGuest) If websocket passed
+  @returns 2 (value=false), (string error) If the websocket failed
+]]
+function tLib.downgradeWebsocket()
+  checkWS()
+
+  local bOk, tResponse = wsRequest({
+    type = "logout"
+  })
+
+  return bOk, bOk and tResponse.isGuest or tResponse.error
+end
+
+--[[
   @function makeTransaction Make a transaction (If logged in.)
   @param sTo The address to send krist to.
   @param iAmount The amount of krist to send. This value will be math.floor'd
