@@ -102,6 +102,28 @@ local function eventify(sEvent)
     }
 end
 
+local function httpRead(tResponse, sErr, tErrResponse)
+  if not tResponse then
+    if sErr then
+      return nil, sErr
+    elseif tErrResponse then
+      return nil, tErrResponse.readAll()
+    else
+      return nil, "Bad response."
+    end
+  end
+
+  local ok1, sData = pcall(tResponse.readAll)
+  if not ok1 then
+    return nil, "Failed to read response data."
+  end
+
+  local ok2, tData = pcall(json.decode, sData)
+  if not ok2 then
+    return nil, "Failed to decode response data."
+  end
+  return tData
+end
 
 --[[
   @local-function checkWS checks if the websocket has been set yet, throws an error if not.
@@ -311,12 +333,14 @@ end
   @param sMeta Optional The metadata to send with.
   @param sAuth Optional If KristWrap is not running, you can use this to authorize the transaction
   @returns 1 (value=true) If the transaction was successful
-  @returns 2 (value=false), (string error) If the transaction failed
+  @returns 2 (value=nil), (string error) If the transaction failed or there was an error in the request
 ]]
 function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
   expect(1, sTo,     "string")
   expect(2, iAmount, "number")
-  iAmount = math.floor(iAmount)
+  if iAmount % 1 ~= 0 then
+    error("Bad argument #3: Number should be an integer.", 2)
+  end
   expect(3, sMeta,   "string", "nil")
   expect(4, sAuth,   "string", "nil")
 
@@ -343,7 +367,7 @@ function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
     end
     return false, tResponse.error
   else -- http request
-    local tResponse, sErr, tErrorHandle = httpPost(
+    local tData, sErr = httpRead(httpPost(
       sHttpEP .. "/transactions/",
       {
         privatekey = tLib.toKristWalletFormat(sAuth),
@@ -351,15 +375,12 @@ function tLib.makeTransaction(sTo, iAmount, sMeta, sAuth)
         amount = iAmount,
         metadata = sMeta
       }
-    )
+    ))
 
-    if not tResponse then
-      error(string.format("Bad response. sErr:(%s), handleAll:(%s)", sErr, tErrorHandle.readAll()))
+    if tData then
+      return tData.ok or nil, tData.error
     end
-
-    local ok, tAll = pcall(json.decode, tResponse.readAll())
-    tResponse.close()
-    return tAll.ok, tAll.error
+    return nil, sErr
   end
 end
 
@@ -381,7 +402,7 @@ end
 --[[
   @function getV2Address Uses the krist endpoint to convert a pkey to a v2 krist address
   @param sKey The privatekey you wish to use (Can be in RAW or KristWallet format)
-  @returns nil If there was a failure.
+  @returns 2 (value=nil), (string error) If there was a failure.
   @returns 1 (string Address) If everything was ok.
 ]]
 function tLib.getV2Address(sKey)
@@ -391,15 +412,8 @@ function tLib.getV2Address(sKey)
   -- convert to kristwallet format
   sKey = tLib.toKristWalletFormat(sKey)
 
-  -- ask for the v2 address
-  local tResponse, sErr = httpPost(sHttpEP .. "/v2", {privatekey = sKey})
-
-  -- return the response if we got one, otherwise return nil
-  if tResponse then
-    tData = json.decode(tResponse.readAll())
-    tResponse.close()
-    return tData.address
-  end
+  -- ask for the v2 address, and return it
+  return httpRead(httpPost(sHttpEP .. "/v2", {privatekey = sKey}))
 end
 
 --[[
