@@ -34,7 +34,7 @@ parallel.waitForAny(
     KristWrap.run({"transactions"}, privatekey)
   end,
   function()
-    KristWrap.Initialized:Wait() -- wait for KristWrap.run to begin executing.
+    KristWrap.Initialized:Wait() -- wait for KristWrap.run to connect properly.
 
     while true do
       local to, from, value, metadata = KristWrap.Transaction:Wait()
