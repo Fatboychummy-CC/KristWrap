@@ -1,4 +1,9 @@
 --[[
+  @Creator Fatboychummy
+  @Build 26
+  @Version 1
+  @AsOf July 25, 2020
+
   MIT License
   Copyright 2020 Fatboychummy
 
@@ -35,25 +40,27 @@ local tConnections = {}
 --[[
   @local-function eventify create a thing that can wait for events similar to roblox's events
   @param sEvent the event to listen for
-  @returns 1 (table Wait/Connect methods)
+  @returns 1 (table Wait/Connect/Fire methods)
 ]]
 local function eventify(sEvent)
   expect(1, sEvent, "string")
   return {
       --[[
-        @function Fire fires the event
+        @function Event:Fire fires the event
         @params event arguments
+        @part-of eventify
       ]]
       Fire = function(self, ...)
         os.queueEvent(sEvent, ...)
       end,
 
       --[[
-        @function Wait waits for an event to occur, then returns it and it's data
+        @function Event:Wait waits for an event to occur, then returns it and it's data
         @param self the event
         @param nTimeout timeout, in seconds
         @returns any If the event was received
         @returns nil If the timeout was hit
+        @partof eventify
       ]]
       Wait = function(self, nTimeout)
         expect(1, self, "table")
@@ -73,10 +80,11 @@ local function eventify(sEvent)
       end,
 
       --[[
-        @function Connect whenever this event occurs, call callback
+        @function Event:Connect whenever this event occurs, call callback
         @param self the event
         @param fCallback the callback function to be called with event data
-        @returns 1 (table with Disconnect to disconnect from the event)
+        @returns 1 (table with method Disconnect to disconnect from the event)
+        @part-of eventify
       ]]
       Connect = function(self, fCallback)
         expect(1, self, "table")
@@ -89,6 +97,10 @@ local function eventify(sEvent)
         tConnections[sEvent][i] = fCallback
 
         return {
+          --[[
+            @function connection:Disconnect disconnect the callback from being called
+            @part-of Event:Connect
+          ]]
           Disconnect = function()
             for i = 1, #tConnections[sEvent] do
               if tConnections[sEvent][i] == fCallback then
@@ -102,6 +114,15 @@ local function eventify(sEvent)
     }
 end
 
+--[[
+  @local-function httpRead attempt to read http response
+  @short Can be used directly with httpPost
+  @param tResponse the http response (or nil if the response failed)
+  @param sErr an error string (or nil if the response was ok)
+  @param tErrResponse the http error response (or nil if the response was ok)
+  @returns 1 (table data) if the response was ok, and convertable from json
+  @returns 2 (value=nil), (string error) if there was any error.
+]]
 local function httpRead(tResponse, sErr, tErrResponse)
   if not tResponse then
     if sErr then
@@ -146,9 +167,10 @@ end
 --[[
   @local-function httpPost Post data converted to json
   @param sTo The url to post to
-  @param tData The data to be converted to json
-  @param tHeaders Any extra headers to be added ("Content-Type"="application/json" is automatically added.)
-  @returns whatever http.post returns
+  @oparam tData The data to be converted to json
+  @oparam tHeaders Any extra headers to be added ("Content-Type"="application/json" is automatically added.)
+  @returns 1 (table response) if the post request is ok
+  @returns 3 (value=nil), (string error), (table errorResponse) if the post request was not ok
 ]]
 local function httpPost(sTo, tData, tHeaders)
   expect(1, sTo, "string")
@@ -164,7 +186,7 @@ end
 
 --[[
   @local-function wsRequest make a websocket request
-  @param tData Optional, The data to be sent.
+  @oparam tData The data to be sent.
   @returns 2 (boolean response OK), (table response) Always
 ]]
 local function wsRequest(tData)
@@ -190,7 +212,7 @@ end
 --[[
   @local-function wsStart Make the initial connection to the websocket via endpoint provided
   @short sets the environment-local variable 'ws' to the websocket.
-  @param sAuth Optional, Authorize this connection.
+  @oparam sAuth Authorize this connection.
 ]]
 local function wsStart(sAuth)
   expect(1, sAuth, "string", "nil")
@@ -281,7 +303,7 @@ end
 --[[
   @function aboutMe get information about the websocket
   @short returns information like if the websocket is authorized, it's address, balance, and etc.
-  @returns 2 (boolean websocket_success), (table data)
+  @returns 2 (boolean websocket_success), (table data) Always
 ]]
 function tLib.aboutMe()
   checkWS()
@@ -330,8 +352,8 @@ end
   @function makeTransaction Make a transaction (If logged in.)
   @param sTo The address to send krist to.
   @param iAmount The amount of krist to send. This value will be math.floor'd
-  @param sMeta Optional The metadata to send with.
-  @param sAuth Optional If KristWrap is not running, you can use this to authorize the transaction
+  @oparam sMeta The metadata to send with.
+  @oparam sAuth If KristWrap is not running, you can use this to authorize the transaction
   @returns 1 (value=true) If the transaction was successful
   @returns 2 (value=nil), (string error) If the transaction failed or there was an error in the request
 ]]
@@ -402,8 +424,8 @@ end
 --[[
   @function getV2Address Uses the krist endpoint to convert a pkey to a v2 krist address
   @param sKey The privatekey you wish to use (Can be in RAW or KristWallet format)
-  @returns 2 (value=nil), (string error) If there was a failure.
   @returns 1 (string Address) If everything was ok.
+  @returns 2 (value=nil), (string error) If there was a failure.
 ]]
 function tLib.getV2Address(sKey)
   expect(1, sKey, "string")
@@ -419,8 +441,10 @@ end
 --[[
   @function run Connects to and runs the background conversion of websocket_message to websocket_message_decoded
   @param tSubscriptions Table of subscriptions to subscribe to (transactions, blocks, etc)
-  @param sAuth Optional, supply with a KristWallet format private-key to elevate status (allows for sending krist from an address)
+  @oparam sAuth supply with a KristWallet format private-key to elevate status (allows for sending krist from an address)
   @queues websocket_message_decoded whenever a websocket message arrives for our websocket.
+  @queues KristWrap_Transaction whenever a transaction is detected.
+  @queues KristWrap_Initialized when the main loop has began running.
 ]]
 function tLib.run(tSubscriptions, sAuth)
   expect(1, tSubscriptions, "table", "nil")
@@ -445,11 +469,9 @@ function tLib.run(tSubscriptions, sAuth)
       if sEvent == "transaction" then
         -- get event information
         local t = tData.transaction
-        local ok, meta = pcall(json.decode, t.metadata)
-        if not ok then meta = t.metadata end
 
         -- queue transaction event.
-        tLib.Transaction:Fire(t.from, t.to, t.value, meta)
+        tLib.Transaction:Fire(t.from, t.to, t.value, t.metadata)
       end
     end
   }
@@ -553,21 +575,32 @@ end
 
 --[[
   @function getEndPoint Gets the current endpoint in use.
-  @returns 1 (string The endpoint) If the endpoint has been set
-  @returns nil If the endpoint has not yet been set.
+  @returns 1 (string current endpoint) If the endpoint has been set
+  @returns 1 (value=nil) If the endpoint has not yet been set.
 ]]
 function tLib.getEndPoint()
   return sEndPoint
 end
 
 --[[
-  @Event Initialized
-  @short Fired when
+  @Event KristWrap_Initialized Fired when the KristWrap runner is ready
 ]]
 tLib.Initialized = eventify("KristWrap_Initialized")
 
+--[[
+  @Event KristWrap_Transaction Fired when a transaction is detected
+  @param sFrom the transaction's sender
+  @param sTo the transaction's receiver
+  @param nValue the value of the transaction (in Krist)
+  @oparam Metadata the metadata of the transaction 
+]]
 tLib.Transaction = eventify("KristWrap_Transaction")
 
+--[[
+  @Event websocket_message_decoded Fired when a websocket message is received from OUR websocket.
+  @short will not be fired if any other websockets are opened
+  @param tData The data decoded from JSON
+]]
 tLib.websocket_message_decoded = eventify("websocket_message_decoded")
 
 --[[
