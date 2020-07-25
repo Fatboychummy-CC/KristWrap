@@ -544,6 +544,14 @@ function tLib.useDefaultEndPoint()
 end
 
 --[[
+  @function getDefaultEndPoint get the default endpoint
+  @returns 1 (string default endpoint)
+]]
+function tLib.getDefaultEndPoint()
+  return "krist.ceriat.net"
+end
+
+--[[
   @function getEndPoint Gets the current endpoint in use.
   @returns 1 (string The endpoint) If the endpoint has been set
   @returns nil If the endpoint has not yet been set.
