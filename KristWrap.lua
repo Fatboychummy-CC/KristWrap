@@ -120,7 +120,7 @@ end
   @param tResponse the http response (or nil if the response failed)
   @param sErr an error string (or nil if the response was ok)
   @param tErrResponse the http error response (or nil if the response was ok)
-  @returns 1 (table data) if the response was ok, and convertable from json
+  @returns 1 (string address) if the response was ok, and convertable from json
   @returns 2 (value=nil), (string error) if there was any error.
 ]]
 local function httpRead(tResponse, sErr, tErrResponse)
@@ -143,7 +143,8 @@ local function httpRead(tResponse, sErr, tErrResponse)
   if not ok2 then
     return nil, "Failed to decode response data."
   end
-  return tData
+
+  return (tData.ok and tData.address or nil), tData.error
 end
 
 --[[
@@ -592,7 +593,7 @@ tLib.Initialized = eventify("KristWrap_Initialized")
   @param sFrom the transaction's sender
   @param sTo the transaction's receiver
   @param nValue the value of the transaction (in Krist)
-  @oparam Metadata the metadata of the transaction 
+  @oparam Metadata the metadata of the transaction
 ]]
 tLib.Transaction = eventify("KristWrap_Transaction")
 
