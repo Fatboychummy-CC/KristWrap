@@ -1,6 +1,6 @@
 --[[
   @Creator Fatboychummy
-  @Build 26
+  @Build 27
   @Version 1
   @AsOf July 25, 2020
 
@@ -120,7 +120,7 @@ end
   @param tResponse the http response (or nil if the response failed)
   @param sErr an error string (or nil if the response was ok)
   @param tErrResponse the http error response (or nil if the response was ok)
-  @returns 1 (string address) if the response was ok, and convertable from json
+  @returns 1 (table data) if the response was ok, and convertable from json
   @returns 2 (value=nil), (string error) if there was any error.
 ]]
 local function httpRead(tResponse, sErr, tErrResponse)
@@ -143,8 +143,7 @@ local function httpRead(tResponse, sErr, tErrResponse)
   if not ok2 then
     return nil, "Failed to decode response data."
   end
-
-  return (tData.ok and tData.address or nil), tData.error
+  return tData
 end
 
 --[[
@@ -436,7 +435,16 @@ function tLib.getV2Address(sKey)
   sKey = tLib.toKristWalletFormat(sKey)
 
   -- ask for the v2 address, and return it
-  return httpRead(httpPost(sHttpEP .. "/v2", {privatekey = sKey}))
+  local tOk, sErr, tErr = httpRead(httpPost(sHttpEP .. "/v2", {privatekey = sKey}))
+  if tOk then
+    if tOk and tOk.ok then
+      return tOk.address
+    else
+      return tOk.error
+    end
+  else
+    return nil, sErr
+  end
 end
 
 --[[
