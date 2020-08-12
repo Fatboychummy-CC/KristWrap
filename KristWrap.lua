@@ -301,6 +301,17 @@ local function subscribe(tSubscriptions)
 end
 
 --[[
+  @function getName get information about a name
+  @returns 1 (table response) if request is ok
+  @returns 3 (value=nil), (string error), (table errorResponse) if the request failed
+]]
+function tLib.getName(sName)
+  checkEndPoint()
+
+  return httpRead(http.get(string.format("%s/names/%s", sHttpEP, textutils.urlEncode(sName))))
+end
+
+--[[
   @function aboutMe get information about the websocket
   @short returns information like if the websocket is authorized, it's address, balance, and etc.
   @returns 2 (boolean websocket_success), (table data) Always
