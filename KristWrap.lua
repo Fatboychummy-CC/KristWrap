@@ -32,7 +32,7 @@ local sha256 = require("sha256") -- Recommended use Anavrin's version at https:/
                                  -- May not be compatible with other versions of these modules.
 local tLib = {}
 local wsID = 1
-local sEndPoint, ws, sWsEP, sHttpEP
+local sEndPoint, ws, sWsEP, sHttpEP, wsUrl
 local isAuthed, running = false, false
 
 local tConnections = {}
@@ -251,6 +251,7 @@ local function wsStart(sAuth)
 
         -- attempt websocket connection
         local sResponse, sErr2 = http.websocket(tData.url)
+        wsUrl = tData.url
 
         -- if we got a response
         if sResponse then
@@ -498,6 +499,20 @@ function tLib.run(tSubscriptions, sAuth)
 
   -- main loop
   local function loop1()
+    assert(wsUrl, "Websocket reset before init could complete.")
+    local _wsUrl = wsUrl
+    local function receive()
+      while true do
+        local ev, url, contents = os.pullEvent()
+        if ev == "websocket_message" and url == _wsUrl then
+          return contents
+        elseif ev == "websocket_closed" and url == _wsUrl then
+          tLib.close()
+          error("Websocket was closed.")
+        end
+      end
+    end
+
     -- set running
     running = true
     local iFailCount = 0
@@ -506,7 +521,7 @@ function tLib.run(tSubscriptions, sAuth)
     -- actual main loop
     while true do
       -- listen for websocket messages
-      local sData = ws.receive()
+      local sData = receive()
 
       -- attempt decode
       local bOk, tData = pcall(json.decode, sData)
@@ -547,7 +562,7 @@ function tLib.run(tSubscriptions, sAuth)
 
   -- pcall main loop so if it stops we can close the websocket, and set running to false.
   local bOk, sErr = pcall(parallel.waitForAny, loop1, loop2)
-  ws.close()
+  pcall(tLib.close)
   running = false
   if not bOk then
     error(sErr, 2)
@@ -627,7 +642,12 @@ tLib.websocket_message_decoded = eventify("websocket_message_decoded")
   @function close Closes the websocket, if it is opened.
 ]]
 function tLib.close()
-  if ws then ws.close() ws = nil end
+  if ws then
+    ws.close()
+    os.queueEvent("websocket_closed", wsUrl)
+    ws = nil
+    wsUrl = nil
+  end
 end
 
 return tLib
