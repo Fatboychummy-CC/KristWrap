@@ -33,7 +33,7 @@ local sha256 = require("sha256") -- Recommended use Anavrin's version at https:/
 local tLib = {}
 local wsID = 1
 local sEndPoint, ws, sWsEP, sHttpEP, wsUrl
-local isAuthed, running = false, false
+local isAuthed, running, bQueue = false, false, false
 
 local tConnections = {}
 
@@ -560,13 +560,48 @@ function tLib.run(tSubscriptions, sAuth)
     end
   end
 
+  local tQueue = {}
+
+  -- queue loop
+  local function loop3()
+    while true do
+      local tEvent = table.pack(os.pullEvent("KristWrap_Transaction"))
+      if bQueue then
+        table.insert(tQueue, tEvent)
+      end
+    end
+  end
+
+  -- queue clear loop
+  local function loop4()
+    while true do
+      if not bQueue and tQueue[1] then
+        os.queueEvent(table.unpack(tQueue[1]))
+        table.remove(tQueue, 1)
+      end
+      os.sleep(1)
+    end
+  end
+
   -- pcall main loop so if it stops we can close the websocket, and set running to false.
-  local bOk, sErr = pcall(parallel.waitForAny, loop1, loop2)
+  local bOk, sErr = pcall(parallel.waitForAny, loop1, loop2, loop3, loop4)
   pcall(tLib.close)
   running = false
   if not bOk then
     error(sErr, 2)
   end
+end
+
+--[[
+  @function setQueueEnabled enables the queue when handling a transaction.
+  @short When the queue is disabled, if transactions exist within the queue,
+          queue them as events so that the shop can handle them as well.
+  @param _bQueue Enable or disable the queue
+]]
+function tLib.setQueueEnabled(_bQueue)
+  expect(1, _bQueue, "boolean")
+
+  bQueue = _bQueue
 end
 
 --[[
