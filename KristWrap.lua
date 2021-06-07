@@ -653,6 +653,14 @@ function tLib.getEndPoint()
 end
 
 --[[
+  @function isAuthed Returns whether or not KristWrap is authorized.
+  @returns 1 (boolean isAuthed)
+]]
+function tLib.isAuthed()
+  return isAuthed  
+end
+
+--[[
   @Event KristWrap_Initialized Fired when the KristWrap runner is ready
 ]]
 tLib.Initialized = eventify("KristWrap_Initialized")
